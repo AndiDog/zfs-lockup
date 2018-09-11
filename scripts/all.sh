@@ -58,7 +58,7 @@ cat >>/etc/make.conf <<-EOF
 	INDEXDIR=/var/ports
 EOF
 
-poudriere jail -c -j 103amd64 -v 10.3-RELEASE -a amd64
+poudriere jail -c -j 112amd64 -v 11.2-RELEASE -a amd64
 
 poudriere ports -c -B branches/2018Q3 -m svn+https
 

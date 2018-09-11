@@ -1,7 +1,7 @@
 variables:
   iso_checksum_type: sha256
-  iso_checksum_url: http://ftp.freebsd.org/pub/FreeBSD/releases/ISO-IMAGES/10.3/CHECKSUM.SHA256-FreeBSD-10.3-RELEASE-amd64
-  iso_url: http://ftp.freebsd.org/pub/FreeBSD/releases/ISO-IMAGES/10.3/FreeBSD-10.3-RELEASE-amd64-disc1.iso
+  iso_checksum_url: http://ftp.freebsd.org/pub/FreeBSD/releases/ISO-IMAGES/11.2/CHECKSUM.SHA256-FreeBSD-11.2-RELEASE-amd64
+  iso_url: http://ftp.freebsd.org/pub/FreeBSD/releases/ISO-IMAGES/11.2/FreeBSD-11.2-RELEASE-amd64-disc1.iso
 
 builders:
   - type: qemu

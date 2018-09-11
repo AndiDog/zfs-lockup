@@ -1,0 +1,117 @@
+variables:
+  iso_checksum_type: sha256
+  iso_checksum_url: http://ftp.freebsd.org/pub/FreeBSD/releases/ISO-IMAGES/10.3/CHECKSUM.SHA256-FreeBSD-10.3-RELEASE-amd64
+  iso_url: http://ftp.freebsd.org/pub/FreeBSD/releases/ISO-IMAGES/10.3/FreeBSD-10.3-RELEASE-amd64-disc1.iso
+
+builders:
+  - type: qemu
+    boot_command:
+      - '<esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait5>'
+      - '<bs><bs><bs><bs><bs><bs><bs><bs><bs><bs>'
+      - 'boot -s<enter>'
+      - '<wait10><wait10>'
+      - '/bin/sh<enter><wait>'
+      - 'mdmfs -s 10m md1 /tmp<enter><wait>'
+      - 'dhclient -l /tmp/dhclient.lease.vtnet0 vtnet0<enter><wait5>'
+      - 'fetch -o /tmp/installerconfig http://{{ .HTTPIP }}:{{ .HTTPPort }}/installerconfig_zfs<enter><wait5>'
+      - 'bsdinstall script /tmp/installerconfig<enter>'
+    # qemu time-to-boot-menu may be unpredictable depending on host speed, so we use a short delay here plus hammering
+    # the ESC key in the `boot_command`
+    boot_wait: 1s
+    disk_cache: 'unsafe' # we want maximum speed (if one automated build crashes, nobody cares)
+    disk_size: '10240'
+    headless: 'false'
+    http_directory: './http'
+    iso_checksum_type: '{{ user `iso_checksum_type` }}'
+    iso_checksum_url: '{{ user `iso_checksum_url` }}'
+    iso_url: '{{ user `iso_url` }}'
+    output_directory: ./output-qemu
+    qemuargs:
+      - ['-m', '2048M']
+      - ['-smp', 'cpus=2']
+      # See https://www.packer.io/docs/builders/qemu.html
+      - ['-netdev', 'user,hostfwd=tcp::{{ .SSHHostPort }}-:22,id=forward']
+      - ['-device', 'virtio-net,netdev=forward,id=net0']
+    shutdown_command: /sbin/poweroff
+    shutdown_timeout: "12m" # jails may need very long to stop (ezjail stops them one after another)
+    ssh_password: vagrant
+    ssh_username: root
+    ssh_wait_timeout: 1000s
+    vm_name: 'zfslockuptest'
+
+  - type: virtualbox-iso
+    boot_command:
+      - '<esc><wait>'
+      - 'boot -s<enter>'
+      - '<wait10><wait5>'
+      - '/bin/sh<enter><wait>'
+      - 'mdmfs -s 10m md1 /tmp<enter><wait>'
+      - 'dhclient -l /tmp/dhclient.lease.vtnet0 vtnet0<enter><wait5>'
+      - 'fetch -o /tmp/installerconfig http://{{ .HTTPIP }}:{{ .HTTPPort }}/installerconfig_zfs<enter><wait5>'
+      - 'bsdinstall script /tmp/installerconfig<enter>'
+    boot_wait: 10s
+    disk_size: '10240'
+    guest_additions_mode: disable
+    guest_os_type: FreeBSD_64
+    hard_drive_interface: sata
+    headless: 'false'
+    http_directory: './http'
+    iso_checksum_type: '{{ user `iso_checksum_type` }}'
+    iso_checksum_url: '{{ user `iso_checksum_url` }}'
+    iso_interface: sata
+    iso_url: '{{ user `iso_url` }}'
+    output_directory: ./output-virtualbox-iso
+    shutdown_command: poweroff
+    ssh_password: vagrant
+    ssh_username: root
+    ssh_wait_timeout: 1000s
+    vboxmanage: [[
+      "modifyvm", "{{ .Name }}",
+      "--audio", "none",
+      "--cpus", "2",
+      "--memory", "2048",
+      "--nictype1", "virtio",
+    ], [
+      "storagectl", "{{ .Name }}",
+      "--name", "IDE Controller",
+      "--remove"
+    ]]
+    vm_name: 'zfslockuptest'
+
+  - type: vmware-iso
+    boot_command:
+      - '<esc><wait>'
+      - 'boot -s<enter>'
+      - '<wait10><wait10>'
+      - '/bin/sh<enter><wait>'
+      - 'mdmfs -s 10m md1 /tmp<enter><wait>'
+      - 'dhclient -l /tmp/dhclient.lease.em0 em0<enter><wait5>'
+      - 'fetch -o /tmp/installerconfig http://{{ .HTTPIP }}:{{ .HTTPPort }}/installerconfig_zfs<enter><wait5>'
+      - 'bsdinstall script /tmp/installerconfig<enter>'
+    boot_wait: 9s
+    disk_size: '10240'
+    guest_os_type: freebsd-64
+    headless: 'false'
+    http_directory: './http'
+    iso_checksum_type: '{{ user `iso_checksum_type` }}'
+    iso_checksum_url: '{{ user `iso_checksum_url` }}'
+    iso_url: '{{ user `iso_url` }}'
+
+    output_directory: ./output-vmware-iso
+    shutdown_command: poweroff
+    ssh_password: vagrant
+    ssh_username: root
+    ssh_wait_timeout: 1000s
+    vm_name: 'zfslockuptest'
+    vmx_data:
+      cpuid.coresPerSocket: '1'
+      memsize: '2048'
+      numvcpus: '2'
+
+provisioners:
+  - type: shell
+    execute_command: 'chmod +x {{ .Path }}; env {{ .Vars }} {{ .Path }}'
+    scripts:
+      - scripts/all.sh
+
+post-processors: []

@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eux
+
+sysrc firstboot_freebsd_update_enable=NO
+sysrc ec2_fetchkey_enable=YES
+sysrc growfs_enable=NO
+
+sysrc firstboot_pkgs_enable=YES
+sysrc firstboot_pkgs_list="ec2-scripts awscli sudo bash curl"
+sysrc hostname='zfslockuptest'
+
+pw useradd packer -c '' -u 1002 -m -G wheel -h -
+mkdir -m 700 /home/packer/.ssh/
+touch /home/packer/.ssh/authorized_keys
+chown -Rv packer:packer /home/packer/.ssh/
+cat >/home/packer/.ssh/authorized_keys <<-EOF
+	%%SSH_PUBKEY%%
+EOF
+
+echo "Write installerconfig script"
+cat >/home/packer/installerconfig <<YbnuQNEzXrLCXewxnFUSCjhEKwUlASZr
+%%ZFSINSTALL_SCRIPT%%
+YbnuQNEzXrLCXewxnFUSCjhEKwUlASZr
+
+# No reboot needed, we work on separate volume
+sed -i '' 's/^reboot/#reboot/' /home/packer/installerconfig
+
+echo "Write all.sh script"
+cat >/home/packer/all.sh <<JUHbeTzyzCZarobSqrZypqnHMmRdYAIP
+%%ALL_SCRIPT%%
+JUHbeTzyzCZarobSqrZypqnHMmRdYAIP
+
+echo "Done with userdata.sh"

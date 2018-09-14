@@ -6,7 +6,7 @@ set -e
 # -----------------------------------------------------------------
 
 # Set the time
-ntpdate -v -b de.pool.ntp.org
+ntpdate -v -b de.pool.ntp.org || >&2 echo "Failed to set time, probably already running NTP"
 
 env ASSUME_ALWAYS_YES=true pkg bootstrap -fy
 pkg install -y bash sudo

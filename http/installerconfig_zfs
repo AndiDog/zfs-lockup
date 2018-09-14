@@ -4,7 +4,9 @@ else
 	DISTRIBUTIONS="base.txz kernel.txz"
 fi
 
-if [ -e /dev/vtbd0 ]; then
+if [ -e /dev/xbd1 ]; then
+	GEOM=xbd1 # AWS (second volume)
+elif [ -e /dev/vtbd0 ]; then
 	GEOM=vtbd0 # QEMU
 elif [ -e /dev/ada0 ]; then
 	GEOM=ada0 # VirtualBox

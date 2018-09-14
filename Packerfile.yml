@@ -4,6 +4,61 @@ variables:
   iso_url: http://ftp.freebsd.org/pub/FreeBSD/releases/ISO-IMAGES/11.2/FreeBSD-11.2-RELEASE-amd64-disc1.iso
 
 builders:
+  - type: amazon-ebssurrogate
+
+    # Replace these with yours BEGIN
+
+    source_ami: ami-2b97a8c0 # AMI for 11.2 in eu-central-1 (sorry, wasted too much time getting `source_ami_filter` to work)
+    region: eu-central-1
+    availability_zone: eu-central-1b
+    subnet_id: subnet-fffeec85
+    vpc_id: vpc-14d0977c
+    instance_type: t2.medium
+
+    # Tags applied to the instance that is *launched* to create the AMI
+    run_tags:
+        User: asommer
+        Name: zfslockuptest-build
+    run_volume_tags:
+        User: asommer
+        Name: zfslockuptest-build
+    # Tags applied to the AMI and relevant snapshots
+    tags:
+        User: asommer
+        Name: zfslockuptest
+
+    security_group_ids:
+      - 'sg-f2b72598'
+
+    communicator: ssh
+    ssh_username: packer
+    ssh_private_key_file: ssh/id_rsa_zfslockuptest
+
+    # Replace these with yours END
+
+    user_data_file: 'tmp/userdata.sh'
+
+    force_deregister: yes
+    force_delete_snapshot: yes
+
+    launch_block_device_mappings:
+      - volume_type: gp2
+        device_name: /dev/sdb
+        delete_on_termination: yes
+        volume_size: 10
+    ami_root_device:
+      source_device_name: /dev/sdb
+      device_name: /dev/sda1
+      delete_on_termination: yes
+      volume_size: 16
+      volume_type: gp2
+
+    ami_description: 'ZFS lockup test'
+    ami_groups: all
+    ami_name: 'zfslockuptest'
+    ami_virtualization_type: hvm
+    associate_public_ip_address: no
+
   - type: qemu
     boot_command:
       - '<esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait><esc><wait5>'
@@ -20,7 +75,7 @@ builders:
     boot_wait: 1s
     disk_cache: 'unsafe' # we want maximum speed (if one automated build crashes, nobody cares)
     disk_size: '10240'
-    headless: 'false'
+    headless: false
     http_directory: './http'
     iso_checksum_type: '{{ user `iso_checksum_type` }}'
     iso_checksum_url: '{{ user `iso_checksum_url` }}'
@@ -54,7 +109,7 @@ builders:
     guest_additions_mode: disable
     guest_os_type: FreeBSD_64
     hard_drive_interface: sata
-    headless: 'false'
+    headless: false
     http_directory: './http'
     iso_checksum_type: '{{ user `iso_checksum_type` }}'
     iso_checksum_url: '{{ user `iso_checksum_url` }}'
@@ -91,7 +146,7 @@ builders:
     boot_wait: 9s
     disk_size: '10240'
     guest_os_type: freebsd-64
-    headless: 'false'
+    headless: false
     http_directory: './http'
     iso_checksum_type: '{{ user `iso_checksum_type` }}'
     iso_checksum_url: '{{ user `iso_checksum_url` }}'
@@ -111,6 +166,17 @@ builders:
 provisioners:
   - type: shell
     execute_command: 'chmod +x {{ .Path }}; env {{ .Vars }} {{ .Path }}'
+    only:
+      - amazon-ebssurrogate
+    scripts:
+      - scripts/aws/install.sh
+
+  - type: shell
+    execute_command: 'chmod +x {{ .Path }}; env {{ .Vars }} {{ .Path }}'
+    only:
+      - qemu
+      - virtualbox-iso
+      - vmware-iso
     scripts:
       - scripts/all.sh
 

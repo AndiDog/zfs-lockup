@@ -30,23 +30,7 @@ fi
 
 mkdir -p tmp
 rm -f tmp/userdata.sh
-python3 <<-EOF
-	with open('ssh/id_rsa_zfslockuptest.pub', 'rb') as f:
-	    ssh_pubkey = f.read()
-	with open('http/installerconfig_zfs', 'rb') as f:
-	    installer_config_script = f.read()
-	with open('scripts/all.sh', 'rb') as f:
-	    all_script = f.read()
-	with open('userdata.sh.template', 'rb') as f:
-	    tmpl = f.read()
-	with open('tmp/userdata.sh', 'wb') as out:
-	    out.write(
-	        tmpl
-	            .replace(b'%%SSH_PUBKEY%%', ssh_pubkey)
-	            .replace(b'%%ZFSINSTALL_SCRIPT%%', installer_config_script.replace(b'\$', br'\\\$'))
-	            .replace(b'%%ALL_SCRIPT%%', all_script.replace(b'\$', br'\\\$'))
-	    )
-EOF
+./create_userdata.py
 
 : "${ON_ERROR:=ask}"
 packer build -on-error="$ON_ERROR" -only="$BUILDER" /tmp/Packerfile

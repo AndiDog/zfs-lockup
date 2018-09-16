@@ -164,6 +164,13 @@ builders:
       numvcpus: '2'
 
 provisioners:
+  # Start pf first so we can later adapt the config without losing the connection
+  - type: shell
+    execute_command: 'chmod +x {{ .Path }}; env {{ .Vars }} {{ .Path }}'
+    expect_disconnect: yes
+    scripts:
+      - scripts/enable_pf.sh
+
   - type: shell
     execute_command: 'chmod +x {{ .Path }}; env {{ .Vars }} {{ .Path }}'
     only:

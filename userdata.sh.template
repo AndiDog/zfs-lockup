@@ -29,5 +29,6 @@ echo "Write all.sh script"
 cat >/home/packer/all.sh <<JUHbeTzyzCZarobSqrZypqnHMmRdYAIP
 %%ALL_SCRIPT%%
 JUHbeTzyzCZarobSqrZypqnHMmRdYAIP
+chmod +x /home/packer/all.sh
 
 echo "Done with userdata.sh"

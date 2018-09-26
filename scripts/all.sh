@@ -93,13 +93,36 @@ if [ "${VARIANT}" = "poudriere" ]; then
 		        server_name  localhost;
 		        index        index.html;
 
+		        location / {
+		            root /usr/local/www/nginx;
+		            index index.html index.htm;
+		        }
+
+		        location /buildbot/ {
+		            proxy_pass http://10.0.0.2:8010/;
+		        }
+		        location /buildbot/sse/ {
+		            # proxy buffering will prevent sse to work
+		            proxy_buffering off;
+		            proxy_pass http://10.0.0.2:8010/sse/;
+		        }
+		        # required for websocket
+		        location /buildbot/ws {
+		            proxy_http_version 1.1;
+		            proxy_set_header Upgrade \$http_upgrade;
+		            proxy_set_header Connection "upgrade";
+		            proxy_pass http://10.0.0.2:8010/ws;
+		            # raise the proxy timeout for the websocket
+		            proxy_read_timeout 6000s;
+		        }
+
 		        location /pdr {
 		            include mime.types;
 		            types {
 		                text/plain log;
 		            }
 
-		            alias /pdr/data/logs/bulk/;
+		        alias /pdr/data/logs/bulk/;
 		            index index.html index.htm;
 		            autoindex on;
 		        }
@@ -169,10 +192,10 @@ elif [ "${VARIANT}" = "jailed-poudriere" ]; then
 		sysrc pf_enable=YES
 		pfctl -vf /etc/pf.conf
 
-		cp /etc/pf.conf /mnt/etc/pf.conf
-		sysrc -f /mnt/etc/rc.conf pf_enable=YES
-
 		if [ -n "${AWSPHASE}" ]; then
+			cp /etc/pf.conf /mnt/etc/pf.conf
+			sysrc -f /mnt/etc/rc.conf pf_enable=YES
+
 			exit 0
 		fi
 	fi
@@ -320,6 +343,65 @@ elif [ "${VARIANT}" = "jailed-poudriere" ]; then
 		}
 	EOF
 
+	# buildbot BEGIN
+	pkg -j buildbot-master install -y git-lite py36-buildbot py36-buildbot-www sudo
+	jexec buildbot-master sh -e <<-EOF
+		pw useradd -n buildbot-master -m -w random
+		mkdir /var/buildbot-master
+		chown buildbot-master:buildbot-master /var/buildbot-master
+		sudo -u buildbot-master buildbot create-master /var/buildbot-master
+
+		# Basic config, will be replaced below
+		sudo -u buildbot-master cp /var/buildbot-master/master.cfg.sample /var/buildbot-master/master.cfg
+		sed -i '' 's/example-worker/worker0/' /var/buildbot-master/master.cfg
+
+		sysrc buildbot_basedir=/var/buildbot-master
+		sysrc buildbot_user=buildbot-master
+		# using onestart to reproduce the problem, else it would be: sysrc buildbot_enable=YES
+	EOF
+	pkg -j buildbot-worker0 install -y git-lite py36-buildbot-worker sudo
+	jexec buildbot-worker0 sh -e <<-EOF
+		pw useradd -n buildbot-worker -m -w random
+		mkdir /var/buildbot-worker
+		chown buildbot-worker:buildbot-worker /var/buildbot-worker
+		sudo -u buildbot-worker buildbot-worker create-worker /var/buildbot-worker 10.0.0.2 worker0 'pass'
+		sysrc buildbot_worker_basedir=/var/buildbot-worker
+		sysrc buildbot_worker_uid=buildbot-worker
+		sysrc buildbot_worker_gid=buildbot-worker
+		sysrc buildbot_worker_enable=YES
+		# https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=227675
+		sed -i '' 's|command="/usr/local/bin/twistd"|command="/usr/local/bin/twistd-3.6"|' /usr/local/etc/rc.d/buildbot-worker
+	EOF
+
+	cat >/usr/jails/buildbot-master/var/buildbot-master/master.cfg <<-EOF
+		from buildbot.plugins import *
+		c = BuildmasterConfig = {}
+		c['workers'] = [worker.Worker('worker0', 'pass')]
+		c['protocols'] = {'pb': {'port': 9989}}
+		c['change_source'] = []
+		c['change_source'].append(changes.GitPoller(
+		    'git://github.com/buildbot/hello-world.git',
+		    workdir='gitpoller-workdir', branch='master', pollInterval=300))
+		c['builders'] = []
+		factory = util.BuildFactory()
+		factory.addStep(steps.ShellCommand(command=['true']))
+		for i in range(500):
+		    c['builders'].append(
+		        util.BuilderConfig(name=f'runtests-{i}', workernames=['worker0'], factory=factory))
+		c['schedulers'] = []
+		c['schedulers'].append(
+		    schedulers.Nightly(
+		        name=f'sched-regular',
+		        onlyIfChanged=False,
+		        hour='0',
+		        minute='0',
+
+		        builderNames=[bldr.name for bldr in c['builders']]))
+		c['buildbotNetUsageData'] = None # not representative :D
+	EOF
+
+	# buildbot END
+
 	for name in $(jls name); do
 		pkg -j "$name" install -y bash screen vim-console
 	done
@@ -327,6 +409,8 @@ elif [ "${VARIANT}" = "jailed-poudriere" ]; then
 	sysrc nginx_enable=YES
 	if [ -z "${AWSPHASE}" ]; then
 		service nginx start
+		jexec buildbot-master service buildbot start
+		jexec buildbot-worker0 service buildbot-worker start
 	else
 		service jail stop
 
@@ -339,6 +423,9 @@ elif [ "${VARIANT}" = "jailed-poudriere" ]; then
 			if mount | grep -qF "$m"; then umount "$m"; fi
 		done
 	fi
+
+	# buildbot master startup is enough to reproduce ZFS lockup
+	sysrc "jail_list-=buildbot-worker0"
 
 else
 

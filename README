@@ -1,0 +1,36 @@
+ZFS lockup in zil_commit_impl – https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=229614
+
+This repository aims to reproduce the interlock problem reliably.
+
+The `build.sh` script runs Packer to set up a VMware VM or EC2 instance (I only tested VMware Fusion on macOS and EC2 t2 instances) running FreeBSD 11.2 (root on ZFS). You can also follow `scripts/all.sh` to create such a setup on your own. Currently, the setup gives you a plain FreeBSD+ZFS installation which starts a single jail on boot, buildbot-master. This is because the buildbot master process is sufficient to reproduce the issue. The fully working buildbot master+worker exists in this repo only for demonstration purposes (see also https://andidog.de/blog/2018-04-22-buildbot-setup-freebsd-jails).
+
+The interlock seems to happen when vnodes get evicted from the kernel cache while another program triggers a ZFS commit to the intent log (ZIL). Vnode eviction happens much more often if we 1) reduce the cache size and 2) run background programs that scan through many files, constantly requiring new vnodes to be loaded. The buildbot master process does its part simply by starting up, during which it writes builder and scheduler information into a (by default) SQLite database. Producing lots of such writes (here, we use 500 builders and schedulers) lets us reproduce the problem usually at first attempt. Somebody will surely find out a simpler way to simulate such writes in order to trigger the interlock.
+
+Once the VM is running, you can reproduce the problem in the following way:
+
+- Reduce vnode cache size, but not too low because else the system won't even work:
+
+      sudo sysctl kern.maxvnodes=3000
+
+- Create some background loops to trigger vnode eviction (not sure which of those loops are required, but having all of them running makes the reproduction very reliable):
+
+      # To run in background, paste each of the below commands into a screen (`sudo screen bash`) and detach with Ctrl+A,D
+      while true; do sync; done
+      while true; do find / >/dev/null 2>&1; done
+      while true; do
+          for n in $(seq 1 50000); do echo "$(jot -r 1 1 999999999999999999999)" >"/tmp/${n}"; done
+          for n in $(seq 1 50000); do rm "/tmp/${n}"; done
+          sleep 0.2
+      done
+      while true; do /etc/periodic/security/100.chksetuid; done
+      while true; do /etc/periodic/security/110.neggrpperm; done
+
+- Start buildbot master and watch log file
+
+      sudo jexec buildbot-master service buildbot onestart ; tail -F /usr/jails/buildbot-master/var/buildbot-master/twistd.log
+
+- You successfully reproduced the issue if the process hangs after a line like "adding 500 new builders" or "doing housekeeping" (subroutines that write to SQLite database), and never prints "BuildMaster is running". You may also see a `sync` process hanging and never finishing (possibly even at high CPU usage, as if it were in a spinlock). Time to investigate. `procstat -kk $(pgrep python3.6)` should give a stacktrace like in the PR i.e. hanging in zil_commit_impl. On EC2, when I ran `procstat -kk` on a hanging `sync` process (if any), the instance dropped the connection and became unreachable until forceful stop.
+
+- Couldn't reproduce at first attempt? Try again to stop and start buildbot. Ensure you have really reduced `kern.maxvnodes` to a low number or it may not occur for a long time (namely when it bites you in production).
+
+      sudo jexec buildbot-master service buildbot onerestart ; tail -F /usr/jails/buildbot-master/var/buildbot-master/twistd.log

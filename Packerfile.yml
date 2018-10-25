@@ -54,7 +54,6 @@ builders:
       volume_type: gp2
 
     ami_description: 'ZFS lockup test'
-    ami_groups: all
     ami_name: 'zfslockuptest'
     ami_virtualization_type: hvm
     associate_public_ip_address: no
